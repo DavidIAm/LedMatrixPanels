@@ -1,0 +1,31 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.springframework.boot' version '4.0.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'david.i.am'
+version = '0.0.1-SNAPSHOT'
+description = 'panels'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+application {
+    mainClass = 'david.i.am.panels.PanelsApplication'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'com.fazecast:jSerialComm:2.9.3'
+    implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
+}
+
