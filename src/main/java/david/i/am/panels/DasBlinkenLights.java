@@ -17,10 +17,8 @@ public class DasBlinkenLights {
   void init() {
     random = new Random();
     left = new CommunicationCreator("/dev/ttyACM0", 115200);
-//    left.setDisplayOn();
     left.setBrightness(0x20);
     right = new CommunicationCreator("/dev/ttyACM1", 115200);
-//    right.setDisplayOn();
     right.setBrightness(0x20);
   }
 
