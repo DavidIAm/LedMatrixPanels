@@ -5,6 +5,7 @@ This is a Java-based application. It writes to the led matrix units from Framewo
 
 Included functionalities so far:
 * DasBlinkenLights - creates blinkenlights on the panels
+* WifiBattery - shows a battery meter and a wifi signal strength and noise meter
 
 The project is built on **Java** and uses **Gradle** as the build automation tool.
 
@@ -31,14 +32,18 @@ The project is built on **Java** and uses **Gradle** as the build automation too
    ```
 
 3. **Run the Application**
-   Depending on the main class, you can execute the code. For example:
    ```bash
-   java -jar build/libs/panels-0.0.1-SNAPSHOT.jar
+   SPRING_PROFILES_ACTIVE=dasblinkenlights java -jar build/libs/panels-0.0.1-SNAPSHOT.jar
+   SPRING_PROFILES_ACTIVE=wifibattery java -jar build/libs/panels-0.0.1-SNAPSHOT.jar
    ```
+   
+if you use both profiles at once, I suspect that you'll get mostly blinkes with flashes of meters.
+
 
 ## File Overview
 ### Source Files
-- **DasBlinkenLights.java**: Likely implements a blinking light simulation or uses randomness for specific actions.
+- **DasBlinkenLights.java**: Implements a blinking light simulation or uses randomness for specific actions.
+- **WifiBattery.java**: Implements a meter for battery and wifi signal and noise.
 - **CommunicationCreator.java**: A class for creating communication-related functionality.
 
 ### Build Files
