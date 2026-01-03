@@ -14,8 +14,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
-@Profile("wifibandwidth")
-public class WifiBandwidth {
+@Profile("wifibattery")
+public class WifiBattery {
   private CommunicationCreator left;
   private CommunicationCreator right;
 
