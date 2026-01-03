@@ -27,5 +27,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'com.fazecast:jSerialComm:2.9.3'
     implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
+    compileOnly("org.projectlombok:lombok:1.18.30")
+    annotationProcessor("org.projectlombok:lombok:1.18.30")
 }
 
