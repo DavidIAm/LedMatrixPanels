@@ -7,10 +7,18 @@ import org.springframework.stereotype.Component;
 public class Configuration {
   @Bean("left")
   public CommunicationCreator left() {
-    return new CommunicationCreator("/dev/ttyACM1", 115200);
+    try {
+      return new CommunicationCreator("/dev/ttyACM1", 115200);
+    } catch (Exception e) {
+      return new CommunicationCreator(null, 0);
+    }
   }
   @Bean("right")
   public CommunicationCreator right() {
-    return new CommunicationCreator("/dev/ttyACM0", 115200);
+    try {
+      return new CommunicationCreator("/dev/ttyACM0", 115200);
+    } catch (Exception e) {
+      return new CommunicationCreator(null, 0);
+    }
   }
 }

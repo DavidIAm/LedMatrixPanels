@@ -4,36 +4,30 @@ import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Profile;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-@Profile("shimmer")
 @Slf4j
 @Service
 @Data
-public class ShimmerService {
+public class ShimmerService implements PanelService {
   private static final int FRAME_RATE = 5; // frames per second
   private static final long FRAME_TIME_MS = 1000 / FRAME_RATE;
   private static final int INTER_COLUMN_DELAY_MS = 2;
   private static final int MATRIX_WIDTH = 9;
   private static final int MATRIX_HEIGHT = 34;
 
+  private final ProfileState profileState;
   private final AtomicInteger position = new AtomicInteger(0);
   private final List<Integer> gradientPattern;
   private final AtomicInteger frameCount = new AtomicInteger(0);
   private final long startTime = System.currentTimeMillis();
 
 
-  private final CommunicationCreator left;
-  private final CommunicationCreator right;
-
-  public ShimmerService(@Qualifier("left") CommunicationCreator left, @Qualifier("right") CommunicationCreator right) {
+  public ShimmerService(ProfileState profileState) {
+    this.profileState = profileState;
     // Initialize gradient pattern: sin function, 20 dots per 360 degrees
     List<Integer> pattern = new ArrayList<>();
     int dotsPerCycle = 20;
@@ -48,33 +42,40 @@ public class ShimmerService {
       pattern.add(val);
     }
     this.gradientPattern = Collections.unmodifiableList(pattern);
-    this.left = left;
-    this.right = right;
   }
 
   @PostConstruct
   public void init() {
-    if (left == null) {
-      log.error("Left Device communication not initialized!");
-      return;
-    }
-    if (right == null) {
-      log.error("Right Device communication not initialized!");
-      return;
-    }
-    log.info("Device communication initialized successfully");
-    log.info("Starting shimmer animation via scheduler");
+    log.info("ShimmerService initialized");
   }
 
-  @Scheduled(fixedRate = FRAME_TIME_MS)
-  public void animate() {
+  @Override
+  public String getProfileName() {
+    return "shimmer";
+  }
+
+  @Override
+  public int getBrightness() {
+    return 255; // Shimmer should be bright
+  }
+
+  @Override
+  public void showLeft(CommunicationCreator left) {
+    if (!isActive(profileState)) {
+      return;
+    }
+    int pos = position.get() % gradientPattern.size();
+    updateDisplay(left, pos, true, true);
+  }
+
+  @Override
+  public void showRight(CommunicationCreator right) {
+    if (!isActive(profileState)) {
+      return;
+    }
     int pos = position.getAndIncrement() % gradientPattern.size();
-
-    CompletableFuture<Void> rightFuture = CompletableFuture.runAsync(() -> updateDisplay(right, pos, false, false));
-    CompletableFuture<Void> leftFuture = CompletableFuture.runAsync(() -> updateDisplay(left, pos, true, true));
-
-    CompletableFuture.allOf(rightFuture, leftFuture).join();
-
+    updateDisplay(right, pos, false, false);
+    
     int count = frameCount.incrementAndGet();
     if (count % 10 == 0) {  // Log FPS every 10 frames
       long currentTime = System.currentTimeMillis();

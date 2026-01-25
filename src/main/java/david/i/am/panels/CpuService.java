@@ -12,21 +12,17 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
-import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
-@Profile("cpu")
-public class CpuService {
+public class CpuService implements PanelService {
   public static final String PROC_STAT = "/proc/stat";
-  private final CommunicationCreator left;
-  private final CommunicationCreator right;
 
-  public CpuService(@org.springframework.beans.factory.annotation.Qualifier("left") CommunicationCreator left,
-                    @org.springframework.beans.factory.annotation.Qualifier("right") CommunicationCreator right) {
-    this.left = left;
-    this.right = right;
+  private final ProfileState profileState;
+
+  public CpuService(ProfileState profileState) {
+    this.profileState = profileState;
   }
 
   // Field to store derivative CPU stats (derived percentages)
@@ -34,8 +30,7 @@ public class CpuService {
 
   @PostConstruct
   void init() {
-    left.setBrightness(0x20);
-    right.setBrightness(0x20);
+    // nothing to do here
   }
 
   @PreDestroy
@@ -43,13 +38,18 @@ public class CpuService {
     // nothing needed here
   }
 
-  @Scheduled(initialDelay = 1000, fixedRate = 2000)
-  void showLeft() {
+  @Override
+  public String getProfileName() {
+    return "cpu";
+  }
+
+  @Override
+  public void showLeft(CommunicationCreator left) {
     left.sendDraw(cpuImageForRange("cpu0-7"));
   }
 
-  @Scheduled(fixedRate = 2000)
-  void showRight() {
+  @Override
+  public void showRight(CommunicationCreator right) {
     right.sendDraw(cpuImageForRange("cpu8-15"));
   }
   
@@ -217,6 +217,9 @@ public class CpuService {
 
   @Scheduled(fixedRate = 1000) // Runs every second
   void computeCpuPercentages() {
+    if (!isActive(profileState)) {
+      return;
+    }
     Cpu currentCpuStats = cpu();
     Cpu last = lastCpuStats.get();
     if (last != null) {

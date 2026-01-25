@@ -1,50 +1,43 @@
 package david.i.am.panels;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
-import lombok.Builder;
-import lombok.Getter;
-import org.springframework.context.annotation.Profile;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
 import java.io.File;
 import java.util.List;
 import java.util.Scanner;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import lombok.Builder;
+import lombok.Getter;
+import org.springframework.stereotype.Service;
 
 @Service
-@Profile("ram")
-public class RamService {
+public class RamService implements PanelService {
 
   public static final String PROC_MEMINFO = "/proc/meminfo";
-  private final CommunicationCreator left;
-  private final CommunicationCreator right;
 
-  public RamService(@org.springframework.beans.factory.annotation.Qualifier("left") CommunicationCreator left,
-                    @org.springframework.beans.factory.annotation.Qualifier("right") CommunicationCreator right) {
-    this.left = left;
-    this.right = right;
+  private final ProfileState profileState;
+
+  public RamService(ProfileState profileState) {
+    this.profileState = profileState;
   }
 
-  @PostConstruct
-  void init() {
-    left.setBrightness(0x20);
-    right.setBrightness(0x20);
+  @Override
+  public String getProfileName() {
+    return "ram";
   }
 
-  @PreDestroy
-  void destroy() {
-    // nothing needed here
-  }
-
-  @Scheduled(initialDelay = 1000, fixedRate = 2000)
-  void showLeft() {
+  @Override
+  public void showLeft(CommunicationCreator left) {
+    if (!isActive(profileState)) {
+      return;
+    }
     left.sendDraw(ramImage());
   }
 
-  @Scheduled(fixedRate = 2000)
-  void showRight() {
+  @Override
+  public void showRight(CommunicationCreator right) {
+    if (!isActive(profileState)) {
+      return;
+    }
     right.sendDraw(ramImage());
   }
 

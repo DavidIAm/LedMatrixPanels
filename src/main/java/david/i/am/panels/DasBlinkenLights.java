@@ -4,38 +4,50 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.Random;
 import java.util.stream.IntStream;
-import org.springframework.context.annotation.Profile;
-import org.springframework.scheduling.annotation.Scheduled;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
-@Profile("dasblinkenlights")
-public class DasBlinkenLights {
-  private CommunicationCreator left;
-  private CommunicationCreator right;
+public class DasBlinkenLights implements PanelService {
   private Random random;
+
+  private final ProfileState profileState;
+
+  public DasBlinkenLights(ProfileState profileState) {
+    this.profileState = profileState;
+  }
 
   @PostConstruct
   void init() {
     random = new Random();
-    left = new CommunicationCreator("/dev/ttyACM0", 115200);
-    left.setBrightness(0x20);
-    right = new CommunicationCreator("/dev/ttyACM1", 115200);
-    right.setBrightness(0x20);
   }
 
   @PreDestroy
   void destroy() {
-    left.close();
-    right.close();
+    // nothing needed here
   }
 
-  @Scheduled(initialDelay = 125, fixedRate = 250)
-  void showLeft() {
+  @Override
+  public String getProfileName() {
+    return "dasblinkenlights";
+  }
+
+  @Override
+  public void showLeft(CommunicationCreator left) {
+    if (!isActive(profileState)) {
+      return;
+    }
+    log.trace("DasBlinkenLights: showLeft");
     left.sendDraw(thirtyNineRandomBytes());
   }
-  @Scheduled(fixedRate = 250)
-  void showRight() {
+
+  @Override
+  public void showRight(CommunicationCreator right) {
+    if (!isActive(profileState)) {
+      return;
+    }
+    log.trace("DasBlinkenLights: showRight");
     right.sendDraw(thirtyNineRandomBytes());
   }
   

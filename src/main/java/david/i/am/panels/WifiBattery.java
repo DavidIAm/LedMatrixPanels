@@ -1,7 +1,5 @@
 package david.i.am.panels;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import java.io.File;
 import java.util.HashMap;
 import java.util.List;
@@ -12,15 +10,18 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.Getter;
-import org.springframework.context.annotation.Profile;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
-@Profile("wifibattery")
-public class WifiBattery {
+public class WifiBattery implements PanelService {
   public static final String POWER_SUPPLY_BAT_1_UEVENT = "/sys/class/power_supply/BAT1/uevent";
   public static final String PROC_NET_WIRELESS = "/proc/net/wireless";
+
+  private final ProfileState profileState;
+
+  public WifiBattery(ProfileState profileState) {
+    this.profileState = profileState;
+  }
 
   private static final Map<String, BiConsumer<Battery.BatteryBuilder, String>> BATTERY_MAPPINGS = new HashMap<>();
 
@@ -43,33 +44,24 @@ public class WifiBattery {
     BATTERY_MAPPINGS.put("POWER_SUPPLY_SERIAL_NUMBER", Battery.BatteryBuilder::serialNumber);
   }
 
-  private final CommunicationCreator left;
-  private final CommunicationCreator right;
-
-  public WifiBattery(@org.springframework.beans.factory.annotation.Qualifier("left") CommunicationCreator left,
-                     @org.springframework.beans.factory.annotation.Qualifier("right") CommunicationCreator right) {
-    this.left = left;
-    this.right = right;
+  @Override
+  public String getProfileName() {
+    return "wifibattery";
   }
 
-  @PostConstruct
-  void init() {
-    left.setBrightness(0x20);
-    right.setBrightness(0x20);
-  }
-
-  @PreDestroy
-  void destroy() {
-    // nothing needed here
-  }
-
-  @Scheduled(initialDelay = 1000, fixedRate = 2000)
-  void showLeft() {
+  @Override
+  public void showLeft(CommunicationCreator left) {
+    if (!isActive(profileState)) {
+      return;
+    }
     left.sendDraw(wirelessImage());
   }
 
-  @Scheduled(fixedRate = 2000)
-  void showRight() {
+  @Override
+  public void showRight(CommunicationCreator right) {
+    if (!isActive(profileState)) {
+      return;
+    }
     right.sendDraw(batteryImage());
   }
   

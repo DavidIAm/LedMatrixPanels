@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+
 @Slf4j
 public class CommunicationCreator {
 
@@ -11,10 +12,16 @@ public class CommunicationCreator {
     private final SerialPort serialPort;
 
     public CommunicationCreator(String portName, int baudRate) {
+        if (portName == null || portName.isEmpty()) {
+            this.serialPort = null;
+            log.warn("CommunicationCreator initialized with no port (noop mode)");
+            return;
+        }
         // Opens and configures the serial port
         serialPort = SerialPort.getCommPort(portName);
         serialPort.setComPortParameters(baudRate, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
-        serialPort.setComPortTimeouts(SerialPort.TIMEOUT_WRITE_BLOCKING, 0, 0);
+        // Set to non-blocking or semi-blocking to avoid "rush" effects from queued writes
+        serialPort.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
 
         if (!serialPort.openPort()) {
             throw new IllegalStateException("Failed to open port: " + portName);
@@ -29,6 +36,9 @@ public class CommunicationCreator {
      * @param payload   The payload (variable length, can be null).
      */
     public void sendCommand(CommandVals command, byte[] payload) {
+        if (serialPort == null || !serialPort.isOpen()) {
+            return;
+        }
         byte commandId = command.getValue();
 
         // Build the packet
@@ -47,6 +57,8 @@ public class CommunicationCreator {
         int bytesWritten = serialPort.writeBytes(packet, packet.length);
         if (bytesWritten < 0) {
             log.error("Failed to write to serial port.");
+        } else if (bytesWritten < packet.length) {
+            log.warn("Partial write to serial port: {} of {} bytes", bytesWritten, packet.length);
         }
     }
 
@@ -66,6 +78,9 @@ public class CommunicationCreator {
     }
 
     private void getVersion() {
+        if (serialPort == null || !serialPort.isOpen()) {
+            return;
+        }
         sendCommand(CommandVals.VERSION, null);
         byte[] response = read();
         if (response.length >= 3) {
@@ -138,6 +153,9 @@ public class CommunicationCreator {
      * Closes the serial connection.
      */
     public void close() {
+        if (serialPort == null) {
+            return;
+        }
         if (serialPort.closePort()) {
             log.info("Serial port closed successfully.");
         } else {
@@ -165,6 +183,9 @@ public class CommunicationCreator {
      * @return A 32-byte array containing the response data.
      */
     public byte[] read() {
+        if (serialPort == null || !serialPort.isOpen()) {
+            return new byte[0];
+        }
         byte[] data = new byte[32];
         int bytesRead = serialPort.readBytes(data, data.length);
         if (bytesRead < data.length) {
