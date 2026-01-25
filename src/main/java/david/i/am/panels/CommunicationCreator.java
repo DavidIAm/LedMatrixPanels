@@ -1,7 +1,10 @@
 package david.i.am.panels;
-
 import com.fazecast.jSerialComm.SerialPort;
-
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+@Slf4j
 public class CommunicationCreator {
 
     private static final byte[] HEADER = {(byte) 0x32, (byte) 0xAC}; // Fixed header for all commands
@@ -16,34 +19,35 @@ public class CommunicationCreator {
         if (!serialPort.openPort()) {
             throw new IllegalStateException("Failed to open port: " + portName);
         }
-        System.out.println("Serial Port " + portName + " opened at baud rate " + baudRate);
+        log.info("Serial Port {} opened at baud rate {}", portName, baudRate);
     }
 
     /**
      * Sends a command packet over the serial connection.
      *
-     * @param command The Command Enum value (1 byte).
+     * @param command   The Command Enum value (1 byte).
      * @param payload   The payload (variable length, can be null).
      */
     public void sendCommand(CommandVals command, byte[] payload) {
         byte commandId = command.getValue();
-        // Calculate payload length
-        byte payloadLength = (byte) (payload != null ? payload.length : 0);
 
         // Build the packet
-        byte[] packet = new byte[3 + payloadLength]; // Header (2 bytes) + Command ID + Payload Length + Payload
+        int payloadLength = (payload != null ? payload.length : 0);
+        byte[] packet = new byte[3 + payloadLength]; // Header (2 bytes) + Command ID + Payload
         packet[0] = HEADER[0]; // Header (byte 1)
         packet[1] = HEADER[1]; // Header (byte 2)
         packet[2] = commandId; // Command ID
-        //packet[3] = payloadLength; // Payload Length
 
         // Append payload data if available
         if (payload != null) {
             System.arraycopy(payload, 0, packet, 3, payloadLength);
         }
 
-        // Write the packet to the serial port
-        serialPort.writeBytes(packet, packet.length);
+        // Send the packet over the serial port
+        int bytesWritten = serialPort.writeBytes(packet, packet.length);
+        if (bytesWritten < 0) {
+            log.error("Failed to write to serial port.");
+        }
     }
 
     /**
@@ -55,15 +59,46 @@ public class CommunicationCreator {
         sendCommand(CommandVals.BRIGHTNESS, new byte[]{(byte) brightness});
     }
 
+    @PostConstruct
+    public void postConstruct() {
+        setDisplayOn();
+        getVersion();
+    }
+
+    private void getVersion() {
+        sendCommand(CommandVals.VERSION, null);
+        byte[] response = read();
+        if (response.length >= 3) {
+            int major = (response[0] & 0xFF);
+            int minor = (response[1] & 0xF0) >> 4;
+            int patch = (response[1] & 0x0F);
+            boolean preRelease = (response[2] & 0x01) != 0;
+            log.info("Device Version: v{}.{}.{}{}", major, minor, patch, preRelease ? "-pre" : "");
+        } else {
+            log.warn("Received incomplete version information: {}", bytesToHex(response));
+        }
+    }
+
+    @PreDestroy
+    public void preDestroy() {
+        setSleep(true);
+        close();
+    }
+
     public void setDisplayOn() {
-        sendCommand(CommandVals.DISPLAY_ON, null);
+        setSleep(false);
+    }
+
+    public void setSleep(boolean sleep) {
+        sendCommand(CommandVals.SLEEP, new byte[]{(byte) (sleep ? 1 : 0)});
     }
 
     public void sendDraw(byte[] drawData) {
         sendCommand(CommandVals.DRAW, drawData);
     }
 
-    /// CommandVals enum translated to Java
+    // CommandVals enum translated to Java
+    @Getter
     public enum CommandVals {
         BRIGHTNESS((byte) 0x00),
         PATTERN((byte) 0x01),
@@ -97,10 +132,6 @@ public class CommunicationCreator {
         CommandVals(byte value) {
             this.value = value;
         }
-
-        public byte getValue() {
-            return value;
-        }
     }
 
     /**
@@ -108,9 +139,9 @@ public class CommunicationCreator {
      */
     public void close() {
         if (serialPort.closePort()) {
-            System.out.println("Serial port closed successfully.");
+            log.info("Serial port closed successfully.");
         } else {
-            System.out.println("Failed to close the serial port.");
+            log.error("Failed to close the serial port.");
         }
     }
 
@@ -129,21 +160,18 @@ public class CommunicationCreator {
     }
 
     /**
-     * Requests raw frame data (using Command ID: 0x05) and reads the response.
+     * Reads a 32-byte response from the serial port.
      *
-     * @return A 32-byte array containing the raw frame data.
-     * @throws IllegalStateException If the response is invalid or not 306 bytes.
+     * @return A 32-byte array containing the response data.
      */
     public byte[] read() {
-        byte[] frameData = new byte[32];
-        int bytesRead = serialPort.readBytes(frameData, frameData.length);
-        System.out.println("Raw frame data received: " + bytesRead + " - " + bytesToHex(frameData));
-        while (frameData[0] != 0x00 && frameData[31] != 0x00) {
-            frameData = new byte[32];
-            bytesRead = serialPort.readBytes(frameData, frameData.length);
-            System.out.println("Raw frame data received: " + bytesRead + " - " + bytesToHex(frameData));
+        byte[] data = new byte[32];
+        int bytesRead = serialPort.readBytes(data, data.length);
+        if (bytesRead < data.length) {
+            log.warn("Only read {} bytes from serial port, expected {}", bytesRead, data.length);
         }
-        return frameData;
+        log.debug("Data received: {} bytes - {}", bytesRead, bytesToHex(data));
+        return data;
     }
 
 }

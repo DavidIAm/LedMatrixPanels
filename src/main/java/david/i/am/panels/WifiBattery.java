@@ -3,8 +3,11 @@ package david.i.am.panels;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -16,21 +19,48 @@ import org.springframework.stereotype.Service;
 @Service
 @Profile("wifibattery")
 public class WifiBattery {
-  private CommunicationCreator left;
-  private CommunicationCreator right;
+  public static final String POWER_SUPPLY_BAT_1_UEVENT = "/sys/class/power_supply/BAT1/uevent";
+  public static final String PROC_NET_WIRELESS = "/proc/net/wireless";
+
+  private static final Map<String, BiConsumer<Battery.BatteryBuilder, String>> BATTERY_MAPPINGS = new HashMap<>();
+
+  static {
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_NAME", Battery.BatteryBuilder::name);
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_TYPE", Battery.BatteryBuilder::type);
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_STATUS", Battery.BatteryBuilder::status);
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_PRESENT", (b, v) -> b.present(v.equals("1")));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_CYCLE_COUNT", (b, v) -> b.cycleCount(Integer.parseInt(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_VOLTAGE_MIN_DESIGN", (b, v) -> b.voltageMinDesign(Long.parseLong(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_VOLTAGE_NOW", (b, v) -> b.voltageNow(Long.parseLong(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_CURRENT_NOW", (b, v) -> b.currentNow(Long.parseLong(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_CHARGE_FULL_DESIGN", (b, v) -> b.chargeFullDesign(Long.parseLong(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_CHARGE_FULL", (b, v) -> b.chargeFull(Long.parseLong(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_CHARGE_NOW", (b, v) -> b.chargeNow(Long.parseLong(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_CAPACITY", (b, v) -> b.capacity(Integer.parseInt(v)));
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_CAPACITY_LEVEL", Battery.BatteryBuilder::capacityLevel);
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_MODEL_NAME", Battery.BatteryBuilder::modelName);
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_MANUFACTURER", Battery.BatteryBuilder::manufacturer);
+    BATTERY_MAPPINGS.put("POWER_SUPPLY_SERIAL_NUMBER", Battery.BatteryBuilder::serialNumber);
+  }
+
+  private final CommunicationCreator left;
+  private final CommunicationCreator right;
+
+  public WifiBattery(@org.springframework.beans.factory.annotation.Qualifier("left") CommunicationCreator left,
+                     @org.springframework.beans.factory.annotation.Qualifier("right") CommunicationCreator right) {
+    this.left = left;
+    this.right = right;
+  }
 
   @PostConstruct
   void init() {
-    left = new CommunicationCreator("/dev/ttyACM0", 115200);
     left.setBrightness(0x20);
-    right = new CommunicationCreator("/dev/ttyACM1", 115200);
     right.setBrightness(0x20);
   }
 
   @PreDestroy
   void destroy() {
-    left.close();
-    right.close();
+    // nothing needed here
   }
 
   @Scheduled(initialDelay = 1000, fixedRate = 2000)
@@ -56,42 +86,7 @@ public class WifiBattery {
             .map(index -> (100 - battery.getCapacity()) / 3 < index ? 0b111_111_111 : 0b000_000_000 ).boxed())
         .toList();
 
-//    System.out.println("----------------------");
-//    integers.stream().map(Integer::toBinaryString).forEach(n -> System.out.println(new StringBuilder(String.format("%9s", n).replace(' ', '0')).reverse().toString()));
-    return packbits(integers);
-  }
-
-  private static byte[] packbits(List<Integer> integers) {
-    final int totalBits = integers.size() * 9; // Total bits needed
-    final int bufferSize = (int) Math.ceil(totalBits / 8.0); // Calculate number of bytes needed
-    byte[] buffer = new byte[bufferSize];
-
-    // Process and pack the 9-bit integers into the byte array
-    integers.stream()
-        .map(i -> i & 0x1FF) // Mask each integer to ensure it's 9 bits
-        .reduce(new int[]{0, 0}, // Accumulator: [current bit offset, byte index]
-            (acc, value) -> {
-              int bitOffset = acc[0];
-              int byteIndex = acc[1];
-
-              // Write the value into the current byte
-
-              buffer[byteIndex] |= (value << bitOffset % 8) & 0xFF;
-
-              // Handle spillover bits
-              if (bitOffset > 7 - 9) {
-                buffer[byteIndex + 1] |= (value >> (8 - bitOffset % 8));
-              }
-
-              // Update the bit offset and byte index
-              bitOffset += 9;
-              byteIndex = bitOffset / 8;
-
-              return new int[]{bitOffset, byteIndex};
-            },
-            (acc1, acc2) -> acc1 // Combiner (not needed here as we're dealing with sequential stream)
-        );
-    return buffer;
+    return BitUtils.packbits(integers);
   }
 
   @Builder
@@ -126,7 +121,7 @@ public class WifiBattery {
   }
 
   public Battery battery() {
-    File ueventFile = new File("/sys/class/power_supply/BAT1/uevent");
+    File ueventFile = new File(POWER_SUPPLY_BAT_1_UEVENT);
     Battery.BatteryBuilder builder = Battery.builder();
 
     try (Scanner scanner = new Scanner(ueventFile)) {
@@ -139,61 +134,15 @@ public class WifiBattery {
           String key = keyValue[0].trim();
           String value = keyValue[1].trim();
 
-          // Map the key-value pair to Battery fields
-          switch (key) {
-            case "POWER_SUPPLY_NAME":
-              builder.name(value);
-              break;
-            case "POWER_SUPPLY_TYPE":
-              builder.type(value);
-              break;
-            case "POWER_SUPPLY_STATUS":
-              builder.status(value);
-              break;
-            case "POWER_SUPPLY_PRESENT":
-              builder.present(value.equals("1"));
-              break;
-            case "POWER_SUPPLY_CYCLE_COUNT":
-              builder.cycleCount(Integer.parseInt(value));
-              break;
-            case "POWER_SUPPLY_VOLTAGE_MIN_DESIGN":
-              builder.voltageMinDesign(Long.parseLong(value));
-              break;
-            case "POWER_SUPPLY_VOLTAGE_NOW":
-              builder.voltageNow(Long.parseLong(value));
-              break;
-            case "POWER_SUPPLY_CURRENT_NOW":
-              builder.currentNow(Long.parseLong(value));
-              break;
-            case "POWER_SUPPLY_CHARGE_FULL_DESIGN":
-              builder.chargeFullDesign(Long.parseLong(value));
-              break;
-            case "POWER_SUPPLY_CHARGE_FULL":
-              builder.chargeFull(Long.parseLong(value));
-              break;
-            case "POWER_SUPPLY_CHARGE_NOW":
-              builder.chargeNow(Long.parseLong(value));
-              break;
-            case "POWER_SUPPLY_CAPACITY":
-              builder.capacity(Integer.parseInt(value));
-              break;
-            case "POWER_SUPPLY_CAPACITY_LEVEL":
-              builder.capacityLevel(value);
-              break;
-            case "POWER_SUPPLY_MODEL_NAME":
-              builder.modelName(value);
-              break;
-            case "POWER_SUPPLY_MANUFACTURER":
-              builder.manufacturer(value);
-              break;
-            case "POWER_SUPPLY_SERIAL_NUMBER":
-              builder.serialNumber(value);
-              break;
+          // Map the key-value pair to Battery fields using lookup table
+          BiConsumer<Battery.BatteryBuilder, String> mapping = BATTERY_MAPPINGS.get(key);
+          if (mapping != null) {
+            mapping.accept(builder, value);
           }
         }
       }
     } catch (Exception e) {
-      throw new RuntimeException("Failed to parse uevent file: " + ueventFile.getAbsolutePath(), e);
+      throw new ParseError("Failed to parse uevent file: " + ueventFile.getAbsolutePath(), e);
     }
 
     // Build and return the Battery object
@@ -201,7 +150,7 @@ public class WifiBattery {
   }
 
   public Wifi wireless() {
-    File wirelessFile = new File("/proc/net/wireless");
+    File wirelessFile = new File(PROC_NET_WIRELESS);
     try (Scanner scanner = new Scanner(wirelessFile)) {
       while (scanner.hasNextLine()) {
         String line = scanner.nextLine();
@@ -216,7 +165,7 @@ public class WifiBattery {
         }
       }
     } catch (Exception e) {
-      e.printStackTrace(); // Handle exception (e.g., file not found or parse error)
+      throw new ParseError("Failed to parse wireless file: " + wirelessFile.getAbsolutePath(), e);
     }
     return null; // Return null if no data is found
   }
@@ -240,14 +189,7 @@ public class WifiBattery {
                 ).boxed())
         .toList();
 
-//System.out.println("----------------------");
-    //System.out.println(String.format("link %d ; %d ; %d", wifi.link, 100 - wifi.link, ((100 - wifi.link) / 3)));
-    //System.out.println(String.format("level %d ; %d ; %d ; %d", wifi.level, wifi.level + 30, (90 + (wifi.level + 30)), (90 + (wifi.level + 30)) / 2));
-    //System.out.println(String.format("noise %d ; %d ; %d ", wifi.noise, wifi.noise + 30, -1 * (wifi.noise + 30) / 6));
-    //System.out.println(String.format("SNR %d ; %d ; %d", wifi.level - wifi.noise, (wifi.level - wifi.noise)-100, (wifi.level - wifi.noise)-100 / 2));
-    //System.out.println("----------------------");
-  //integers.stream().map(Integer::toBinaryString).forEach(n -> System.out.println(new StringBuilder(String.format("%9s", n).replace(' ', '0')).reverse().toString()));
-    return packbits(integers);
+    return BitUtils.packbits(integers);
   }
 
   
